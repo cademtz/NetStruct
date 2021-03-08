@@ -16,22 +16,40 @@ void NetStruct_FreeBytes(uint8_t* Bytes) { return _NetStruct_Free(Bytes); }
 
 int NetStruct_PackFmt(uint8_t** out_pBytes, const char* Fmt, ...)
 {
+	va_list va;
+	va_start(va, Fmt);
+	int len = NetStruct_PackFmtVa(out_pBytes, Fmt, va);
+	va_end(va);
+	return len;
+}
+
+int NetStruct_PackFmtVa(uint8_t** out_pBytes, const char* Fmt, va_list Args)
+{
+	va_list va_pack;
+	va_list va_len;
+
+	va_copy(va_pack, Args);
+	va_copy(va_len, Args);
+
 	int len, written;
 	uint8_t* bytes;
-	va_list va;
-
-	va_start(va, Fmt);
-	if ((len = NetStruct_FmtLenVa(Fmt, va)) <= 0)
+	if ((len = NetStruct_FmtLenVa(Fmt, va_len)) <= 0)
+	{
+		va_end(va_len);
+		va_end(va_pack);
 		return -1;
+	}
 
-	va_end(va);
-	va_start(va, Fmt);
+	va_end(va_len);
 
 	bytes = (uint8_t*)_NetStruct_Alloc(len);
-	if ((written = NetStruct_PackFmtBufferVa(bytes, len, Fmt, va)) <= 0)
+	if ((written = NetStruct_PackFmtBufferVa(bytes, len, Fmt, va_pack)) <= 0)
+	{
+		va_end(va_pack);
 		return _NetStruct_Free(bytes), -1;
+	}
 	
-	va_end(va);
+	va_end(va_pack);
 
 	*out_pBytes = bytes;
 	return len;
@@ -43,13 +61,14 @@ int NetStruct_PackFmtBuffer(uint8_t* Buffer, int BufLen, const char* Fmt, ...)
 	va_start(va, Fmt);
 	int len = NetStruct_PackFmtBufferVa(Buffer, BufLen, Fmt, va);
 	va_end(va);
-
 	return len;
 }
 
 int NetStruct_PackFmtBufferVa(uint8_t* Buffer, int BufLen, const char* Fmt, va_list Args)
 {
 	int off = 0;
+	va_list va;
+	va_copy(va, Args);
 
 	for (int i = 0; Fmt[i]; i++)
 	{
@@ -66,21 +85,27 @@ int NetStruct_PackFmtBufferVa(uint8_t* Buffer, int BufLen, const char* Fmt, va_l
 
 		switch (code) // Must use appropriate va_arg calls to avoid size problems
 		{
-		case NetStructCode_Bytes: var = va_arg(Args, const NetStruct_Bytes*); break;
-		case NetStructCode_String: var = va_arg(Args, const char*); break;
-		case NetStructCode_Int: uni.i = va_arg(Args, int), var = &uni.i; break;
-		case NetStructCode_Long: uni.il = va_arg(Args, int64_t), var = &uni.il; break;
-		case NetStructCode_Float: uni.fl = (float)va_arg(Args, double), var = &uni.fl; break;
-		case NetStructCode_Double: uni.d = va_arg(Args, double), var = &uni.d; break;
+		case NetStructCode_Bytes: var = va_arg(va, const NetStruct_Bytes*); break;
+		case NetStructCode_String: var = va_arg(va, const char*); break;
+		case NetStructCode_Int: uni.i = va_arg(va, int), var = &uni.i; break;
+		case NetStructCode_Long: uni.il = va_arg(va, int64_t), var = &uni.il; break;
+		case NetStructCode_Float: uni.fl = (float)va_arg(va, double), var = &uni.fl; break;
+		case NetStructCode_Double: uni.d = va_arg(va, double), var = &uni.d; break;
 		default:
+			va_end(va);
 			return -1;
 		}
 
 		count = NetStruct_PackItem(Buffer + off, BufLen - off, code, var);
 		if (count <= 0)
+		{
+			va_end(va);
 			return -1;
+		}
 		off += count;
 	}
+
+	va_end(va);
 	return off;
 }
 
@@ -95,7 +120,11 @@ int NetStruct_UnpackFmt(const uint8_t* Bytes, int Len, const char* Fmt, ...)
 	{
 		int count = NetStruct_UnpackItem(Bytes + off, Len - off, NetStruct_FmtToCode(Fmt[i]), va_arg(va, void*));
 		if (count <= 0)
+		{
+			va_end(va);
 			return -1;
+		}
+
 		off += count;
 	}
 
@@ -115,6 +144,9 @@ int NetStruct_FmtLen(const char* Fmt, ...)
 int NetStruct_FmtLenVa(const char* Fmt, va_list Args)
 {
 	int len = 0;
+	va_list va;
+	va_copy(va, Args);
+
 	for (int i = 0; Fmt[i]; i++)
 	{
 		char code = NetStruct_FmtToCode(Fmt[i]);
@@ -127,20 +159,26 @@ int NetStruct_FmtLenVa(const char* Fmt, va_list Args)
 		} uni; // Exists as a DOUBLE hack. Can't use &var_arg(...) on MSVC x64 Release mode
 
 		if (code <= 0)
+		{
+			va_end(va);
 			return -1;
+		}
 
 		switch (code)
 		{
-		case NetStructCode_Bytes: len += NetStruct_ItemLen(code, va_arg(Args, NetStruct_Bytes*)); break;
-		case NetStructCode_String: len += NetStruct_ItemLen(code, va_arg(Args, const char*)); break;
-		case NetStructCode_Int: len += NetStruct_ItemLen(code, (uni.i = va_arg(Args, int), &uni.i)); break;
-		case NetStructCode_Long: len += NetStruct_ItemLen(code, (uni.il = va_arg(Args, int64_t), &uni.il)); break;
-		case NetStructCode_Float: len += NetStruct_ItemLen(code, (uni.fl = (float)va_arg(Args, double), &uni.fl)); break;
-		case NetStructCode_Double: len += NetStruct_ItemLen(code, (uni.d = va_arg(Args, double), &uni.d)); break;
+		case NetStructCode_Bytes: len += NetStruct_ItemLen(code, va_arg(va, NetStruct_Bytes*)); break;
+		case NetStructCode_String: len += NetStruct_ItemLen(code, va_arg(va, const char*)); break;
+		case NetStructCode_Int: len += NetStruct_ItemLen(code, (uni.i = va_arg(va, int), &uni.i)); break;
+		case NetStructCode_Long: len += NetStruct_ItemLen(code, (uni.il = va_arg(va, int64_t), &uni.il)); break;
+		case NetStructCode_Float: len += NetStruct_ItemLen(code, (uni.fl = (float)va_arg(va, double), &uni.fl)); break;
+		case NetStructCode_Double: len += NetStruct_ItemLen(code, (uni.d = va_arg(va, double), &uni.d)); break;
 		default:
+			va_end(va);
 			return -1;
 		}
 	}
+
+	va_end(va);
 	return len;
 }
 

@@ -10,6 +10,7 @@ extern "C" {
 // - Takes in a format string 'Fmt' (see: ENetStructFmt)
 // - Returns a length > 0 on success, setting 'out_pBytes' to a new array (see: NetStruct_FreeBytes)
 int NetStruct_PackFmt(uint8_t** out_pBytes, const char* Fmt, ...);
+int NetStruct_PackFmtVa(uint8_t** out_pBytes, const char* Fmt, va_list Args);
 int NetStruct_PackFmtBuffer(uint8_t* Buffer, int BufLen, const char* Fmt, ...);
 int NetStruct_PackFmtBufferVa(uint8_t* Buffer, int BufLen, const char* Fmt, va_list Args);
 int NetStruct_UnpackFmt(const uint8_t* Bytes, int Len, const char* Fmt, ...); // - Returns read length > 0 on success
